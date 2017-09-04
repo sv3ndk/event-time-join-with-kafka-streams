@@ -12,7 +12,7 @@ import play.api.libs.json._
 import scala.collection.JavaConverters._
 
 /**
-  * timestamped recommendation of a recommendation: "let's synergize the out-of-the-box ROI" !
+  * timestamped recommendation of a consultant: "let's synergize the out-of-the-box ROI" !
   * */
 case class Recommendation(event_time: Long, ingestion_time: Long, consultant: String, recommendation: String)
 
@@ -23,7 +23,6 @@ object Recommendation {
 
   def parseJson(rawJson: String): JsResult[Recommendation] =
     Json.parse(rawJson).validate[Recommendation]
-
 }
 
 /**
@@ -37,7 +36,7 @@ case class Mood(event_time: Long, ingestion_time: Long, name: String, mood: Stri
 case class MoodRec(eventTime: Long, consultant: String, mood: Option[String], recommendation: String)
 
 /**
-  * Stateful stream transformer plugged to 2 topics: consultants's mood and consultant's topic.
+  * Stateful stream transformer plugged to 2 topics: consultants's mood and consultant's business recommendations.
   *
   * => tries to produce a streams of joined events in for the form of instances of MoodRec, resolving
   */
@@ -51,7 +50,7 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
 
   val BEGINNING_OF_TIMES = 0l
 
-  // tons of mutable null value initialized a bit later, because java
+  // tons of mutable null values initialized a bit later, because java
   var ctx: ProcessorContext = _
   var moodStore: KeyValueStore[String, List[Mood]] = _
   var bestEffortJoinsStore: WindowStore[String, MoodRec] = _
@@ -66,6 +65,14 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
     consultantNamesStore  = ctx.getStateStore("consultants").asInstanceOf[WindowStore[String, String]]
   }
 
+  /**
+    * Main event handling:
+    *  - if receiving a recommendation event: performs a best-effort join (based on why info is available now),
+    *    emits the result and records the event in the windowStore
+    *  - if receiving a mood event: just record it in key-value store
+    *
+    *  In all cases: also keep a trace of consultant's names we've encountered recently
+    * */
   override def transform(key: String, event: Either[Recommendation, Mood]): KeyValue[String, MoodRec] =
 
     event match {
@@ -97,28 +104,28 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
   }
 
   /**
-    * set of consultants witnessed recently in the mood or recommendation events
+    * set of consultants encountered recently, either in a mood event or a recommendation events
     * */
-  def allRecentConsultants(time: Long): Iterator[String] =
-    consultantNamesStore.fetch("all-recent-names", BEGINNING_OF_TIMES, time).asScala.map(_.value)
+  def allRecentConsultants(until: Long): Iterator[String] =
+    consultantNamesStore.fetch("all-recent-names", BEGINNING_OF_TIMES, until).asScala.map(_.value)
 
 
   /**
-    * This is called every reviewJoinPeriod ms => reviews previously joined events
+    * This is called every `reviewJoinPeriod` ms, it reviews previously joined events and re-emits if necessary
     * */
-  override def punctuate(frontlineTime: Long): KeyValue[String, MoodRec] = {
-    allRecentConsultants(frontlineTime).foreach {
-      consultantName => joinAgain(consultantName, frontlineTime - reviewLagDelta)
+  override def punctuate(latestEventTime: Long): KeyValue[String, MoodRec] = {
+    allRecentConsultants(until = latestEventTime).foreach {
+      consultantName => joinAgain(consultantName, maxEventTimestamp = latestEventTime - reviewLagDelta)
     }
     null
   }
 
   /**
-    * actual review of previously joined data of a consultant
+    * actual review of previously joined events of a consultant
     * */
   def joinAgain(consultantName: String, maxEventTimestamp: Long): Unit = {
 
-    // joined data when the event was received
+    // joined data as per when the recommendation event was received
     val oldJoinedMoods = bestEffortJoinsStore
       .fetch(consultantName, BEGINNING_OF_TIMES, maxEventTimestamp)
       .asScala
@@ -133,9 +140,9 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
       .filter{ case( MoodRec(_, _, oldMood, _), MoodRec(_, _, newMood, _)) => oldMood != newMood }
       .foreach{ case ( _ , updated ) => ctx.forward(consultantName, updated)}
 
-    // TODO: if we update the joined value, we just record that in the windowed storage
+    // TODO: if we update the joined value, we should record that in the windowed storage
 
-    // TODO: explicitly evict old moods here
+    // TODO: explicitly evict old moods here (or use window store here as well?)
 
   }
 
@@ -188,6 +195,7 @@ object EventTimeJoinExampleApp extends App {
 
   import org.apache.kafka.streams.state.Stores
 
+  // store of (consultantName -> chronological-list-of-moods)
   val moodStore = Stores
     .create("moods")
     .withStringKeys
@@ -195,6 +203,7 @@ object EventTimeJoinExampleApp extends App {
     .persistent()
     .build
 
+  // window store of (consultantName -> (mood, recommendation)
   val bestEffortJoinStore = Stores
     .create("bestEffortJoins")
     .withStringKeys
@@ -203,6 +212,7 @@ object EventTimeJoinExampleApp extends App {
     .windowed(1000, 100000, 10, false)
     .build
 
+  // set of consultant names we encountered recently (only one hard-coded key)
   val consultantStore = Stores
     .create("consultants")
     .withStringKeys
