@@ -79,23 +79,22 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
       case Left(rec) =>
         val joined = join(rec.event_time, rec.consultant, rec.recommendation)
         bestEffortJoinsStore.put(rec.consultant, joined, rec.event_time)
-        consultantNamesStore.put("all-recent-names", rec.consultant, rec.event_time)
+        recordConsultantName(rec.consultant, rec.event_time)
         new KeyValue(key, joined)
 
       case Right(mood) =>
-        val updatedMoodHistory = (mood :: Option(moodStore.get(mood.name)).getOrElse(Nil)).sortBy( - _.event_time)
+        val updatedMoodHistory = (mood :: moodHistory(mood.name)).sortBy( - _.event_time)
         moodStore.put(mood.name, updatedMoodHistory)
-        consultantNamesStore.put("all-recent-names", mood.name, mood.event_time)
+        recordConsultantName(mood.name, mood.event_time)
         null
     }
-
 
   /**
     * joins this recommendation with the latest mood known before it, if any
     * */
   def join(recommendationTime: Long, consultant: String, recommendation: String): MoodRec = {
 
-   val maybeMood = Option(moodStore.get(consultant)).getOrElse(Nil)
+   val maybeMood = moodHistory(consultant)
     .dropWhile(_.event_time >= recommendationTime)
     .headOption
     .map(_.mood)
@@ -103,12 +102,17 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
     MoodRec(recommendationTime, consultant, maybeMood, recommendation)
   }
 
+  def moodHistory(consultantName: String): List[Mood] =
+    Option(moodStore.get(consultantName)).getOrElse(Nil)
+
+  def recordConsultantName(name: String, eventTime: Long): Unit =
+    consultantNamesStore.put("all-recent-names", name, eventTime)
+
   /**
     * set of consultants encountered recently, either in a mood event or a recommendation events
     * */
   def allRecentConsultants(until: Long): Iterator[String] =
     consultantNamesStore.fetch("all-recent-names", BEGINNING_OF_TIMES, until).asScala.map(_.value)
-
 
   /**
     * This is called every `reviewJoinPeriod` ms, it reviews previously joined events and re-emits if necessary
@@ -240,4 +244,3 @@ object EventTimeJoinExampleApp extends App {
   new KafkaStreams(builder, config).start()
 
 }
-
