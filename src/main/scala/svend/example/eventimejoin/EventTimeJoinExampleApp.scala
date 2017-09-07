@@ -2,11 +2,13 @@ package svend.example.eventimejoin
 
 import java.util.Properties
 
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
-import org.apache.kafka.streams.processor.ProcessorContext
+import org.apache.kafka.streams.processor.{FailOnInvalidTimestamp, ProcessorContext}
 import org.apache.kafka.streams.state.{KeyValueStore, WindowStore}
+import org.slf4j.{Logger, LoggerFactory}
 import play.api.libs.json._
 
 import scala.collection.JavaConverters._
@@ -41,6 +43,8 @@ case class MoodRec(eventTime: Long, consultant: String, mood: Option[String], re
   * => tries to produce a streams of joined events in for the form of instances of MoodRec, resolving
   */
 class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], KeyValue[String, MoodRec]] {
+
+  val logger: Logger = LoggerFactory.getLogger(EventTimeJoiner.getClass)
 
   // how often do we review previously joined data?
   val reviewJoinPeriod = 1000
@@ -118,6 +122,8 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
     * This is called every `reviewJoinPeriod` ms, it reviews previously joined events and re-emits if necessary
     * */
   override def punctuate(latestEventTime: Long): KeyValue[String, MoodRec] = {
+    println(s"revisiting previous joins, event time is $latestEventTime")
+
     allRecentConsultants(until = latestEventTime).foreach {
       consultantName => joinAgain(consultantName, maxEventTimestamp = latestEventTime - reviewLagDelta)
     }
@@ -165,14 +171,19 @@ object EventTimeJoinExample {
   /**
     * quick and dirty parser that does not handle parsing errors ^^
     * */
-  def parse(rawJson: String): Option[Either[Recommendation, Mood]] =
-    Recommendation.parseJson(rawJson) match  {
+  def parse(rawJson: String): Option[Either[Recommendation, Mood]] = {
+
+   val parsed = Recommendation.parseJson(rawJson) match  {
       case recommendation: JsSuccess[Recommendation] => Some(Left(recommendation.get))
       case e1: JsError =>
-        MoodListJsonSerde.parseJsonMood(rawJson) match {
-          case mood: JsSuccess[Mood] => Some(Right(mood.get))
-          case e2: JsError => None
+      MoodListJsonSerde.parseJsonMood(rawJson) match {
+      case mood: JsSuccess[Mood] => Some(Right(mood.get))
+      case e2: JsError => None
       }
+    }
+    //println(s"parsed: $parsed")
+
+    parsed
   }
 
   /**
@@ -186,6 +197,16 @@ object EventTimeJoinExample {
 
 }
 
+
+class TimeStampSniffer extends FailOnInvalidTimestamp {
+
+  override def extract(record: ConsumerRecord[AnyRef, AnyRef], previousTimestamp: Long) = {
+    val ts = super.extract(record, previousTimestamp)
+    println(s"event ts: $ts")
+    ts
+  }
+}
+
 object EventTimeJoinExampleApp extends App {
 
   val config: Properties = {
@@ -194,6 +215,8 @@ object EventTimeJoinExampleApp extends App {
     p.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
     p.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass)
     p.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass)
+    //p.put(StreamsConfig.BUFFERED_RECORDS_PER_PARTITION_CONFIG, "10")
+//    p.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, "svend.example.eventimejoin.TimeStampSniffer ")
     p
   }
 
@@ -233,7 +256,7 @@ object EventTimeJoinExampleApp extends App {
 
   // TODO: timestamp extractor is missing here
   builder
-    .stream(Serdes.String(), Serdes.String(), "etj-events-2", "etj-moods-2")
+    .stream(Serdes.String(), Serdes.String(), "etj-events-4", "etj-moods-4")
     .mapValues[Option[Either[Recommendation, Mood]]](EventTimeJoinExample.parse)
     .filter{ case (_, v: Option[Either[Recommendation, Mood]]) =>  v.isDefined }
     .mapValues[Either[Recommendation, Mood]](_.get)

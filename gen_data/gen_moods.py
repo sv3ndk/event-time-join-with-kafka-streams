@@ -10,10 +10,10 @@ from __future__ import division
 import faker
 import numpy as np 
 import json
-from time import sleep
+import time
 from kafka import KafkaProducer
 
-target_topic="etj-moods-2"
+target_topic="etj-moods-4"
 
 # this seed must be identical to the seed for gen_events for the names to match
 fake = faker.Faker()
@@ -21,6 +21,20 @@ fake.seed(1234)
 
 state = np.random.RandomState(seed=2345)
 kafka_producer = KafkaProducer(bootstrap_servers=['localhost:9092'])
+
+# setting a fake start "wallclock" time one hour ago
+start_time = int(round(time.time() * 1000)) - 60*60*1000
+
+def event_time_1970(event_time):
+    """
+    For readability, this example uses 0-based event times in milliseconds
+    => timestamp values are between 0 and 10000 if we run it for 10 seconds. 
+    
+    But kafka needs real 1970-based timestamps, among other things to handle
+    event retention in the topics.
+    """
+    return event_time + start_time
+
 
 def mood_duration_millis():
     """
@@ -55,8 +69,11 @@ def emit_mood(name, late=True):
 
     mood_event_json = json.dumps(mood_event)
 
-    print mood_event_json
-    kafka_producer.send(target_topic, mood_event_json)
+    print "posting to {} : {}".format(target_topic, mood_event_json)
+    kafka_producer.send(
+        topic=target_topic, 
+        value=mood_event_json,
+        timestamp_ms=event_time_1970(mood_event["event_time"]))
 
 
 # a couple of nice globally shared variables, because I can :) 
@@ -75,7 +92,7 @@ if __name__ == "__main__":
 
     while True:
         wait_time = min(mood_durations.values())
-        sleep(wait_time / 1000)
+        time.sleep(wait_time / 1000)
         current_time += wait_time
         mood_durations = { name: dur - wait_time for name, dur in mood_durations.items()}        
 

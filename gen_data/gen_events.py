@@ -7,13 +7,13 @@
 from __future__ import division
 import faker
 import numpy as np 
-from time import sleep
+import time
 import json
 from kafka import KafkaProducer
 
 state = np.random.RandomState(seed=2345)
 current_time = 0
-target_topic="etj-events-2"
+target_topic="etj-events-4"
 
 # this seed must be identical to the seed for gen_moods for the names to match
 fake = faker.Faker()
@@ -21,6 +21,19 @@ fake.seed(1234)
 
 names = [fake.first_name() for _ in range(10)]
 kafka_producer = KafkaProducer(bootstrap_servers=['localhost:9092'])
+
+# setting a fake start "wallclock" time one hour ago
+start_time = int(round(time.time() * 1000)) - 60*60*1000
+
+def event_time_1970(event_time):
+    """
+    For readability, this example uses 0-based event times in milliseconds
+    => timestamp values are between 0 and 10000 if we run it for 10 seconds. 
+    
+    But kafka needs real 1970-based timestamps, among other things to handle
+    event retention in the topics.
+    """
+    return event_time + start_time
 
 def thinking_time_until_recommendation():
     return int(state.exponential(200))
@@ -38,8 +51,11 @@ def gen_business_quote(name):
 
 def emit(event):
     event_json = json.dumps(event)
-    print event_json
-    kafka_producer.send(target_topic, event_json)
+    print "posting to {}: {}".format(target_topic, event_json)
+    kafka_producer.send(
+        topic=target_topic, 
+        value=event_json, 
+        timestamp_ms=event_time_1970(event["event_time"]))
 
 if __name__ == "__main__":
 
@@ -47,7 +63,7 @@ if __name__ == "__main__":
 
     while True:
         wait_time = min(thinking_times.values())
-        sleep(wait_time / 1000)
+        time.sleep(wait_time / 1000)
         current_time += wait_time
         thinking_times = { name: dur - wait_time for name, dur in thinking_times.items()}        
 
