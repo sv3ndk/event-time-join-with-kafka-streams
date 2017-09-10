@@ -13,13 +13,14 @@ from kafka import KafkaProducer
 
 state = np.random.RandomState(seed=2345)
 current_time = 0
-target_topic="etj-events-4"
+num_users = 5
+target_topic="etj-events-10"
 
 # this seed must be identical to the seed for gen_moods for the names to match
 fake = faker.Faker()
 fake.seed(1234)
 
-names = [fake.first_name() for _ in range(10)]
+names = [fake.first_name() for _ in range(num_users)]
 kafka_producer = KafkaProducer(bootstrap_servers=['localhost:9092'])
 
 # setting a fake start "wallclock" time one hour ago
@@ -54,7 +55,8 @@ def emit(event):
     print "posting to {}: {}".format(target_topic, event_json)
     kafka_producer.send(
         topic=target_topic, 
-        value=event_json, 
+        value=event_json,
+        key=event["consultant"].encode("UTF-8"),
         timestamp_ms=event_time_1970(event["event_time"]))
 
 if __name__ == "__main__":

@@ -13,13 +13,14 @@ import json
 import time
 from kafka import KafkaProducer
 
-target_topic="etj-moods-4"
+target_topic="etj-moods-10"
+num_users = 5
 
 # this seed must be identical to the seed for gen_events for the names to match
 fake = faker.Faker()
 fake.seed(1234)
 
-state = np.random.RandomState(seed=2345)
+state = np.random.RandomState(seed=230945)
 kafka_producer = KafkaProducer(bootstrap_servers=['localhost:9092'])
 
 # setting a fake start "wallclock" time one hour ago
@@ -40,7 +41,7 @@ def mood_duration_millis():
     """
     non negative random duration for the current mood of a user
     """
-    return max(200, int(state.normal(2000, 1500)))
+    return max(200, int(state.normal(750, 500)))
 
 
 def random_mood():
@@ -73,11 +74,12 @@ def emit_mood(name, late=True):
     kafka_producer.send(
         topic=target_topic, 
         value=mood_event_json,
+        key=name.encode("utf-8"),
         timestamp_ms=event_time_1970(mood_event["event_time"]))
 
 
 # a couple of nice globally shared variables, because I can :) 
-names = [fake.first_name() for _ in range(10)]
+names = [fake.first_name() for _ in range(num_users)]
 current_moods = {name: random_mood() for name in names }
 current_time = 0
 
@@ -104,7 +106,7 @@ if __name__ == "__main__":
             if updated_mood != current_moods[name]:
                 current_moods[name] = updated_mood
                 emit_mood(name)
-                
+
 
 
 
