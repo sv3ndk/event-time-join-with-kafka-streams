@@ -14,7 +14,7 @@ from kafka import KafkaProducer
 state = np.random.RandomState(seed=2345)
 current_time = 0
 num_users = 5
-target_topic="etj-events-10"
+target_topic="etj-events-11"
 
 # this seed must be identical to the seed for gen_moods for the names to match
 fake = faker.Faker()

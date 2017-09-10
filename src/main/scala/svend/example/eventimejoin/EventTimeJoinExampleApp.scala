@@ -3,12 +3,12 @@ package svend.example.eventimejoin
 import java.util.Properties
 
 import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.kafka.common.serialization.Serdes
+import org.apache.kafka.common.serialization.{Deserializer, Serde, Serializer, Serdes}
+import org.apache.kafka.streams.state.Stores
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
 import org.apache.kafka.streams.processor.{FailOnInvalidTimestamp, ProcessorContext}
 import org.apache.kafka.streams.state.{KeyValueStore, WindowStore}
-import org.slf4j.{Logger, LoggerFactory}
 import play.api.libs.json._
 
 import scala.collection.JavaConverters._
@@ -25,6 +25,7 @@ object Recommendation {
 
   def parseJson(rawJson: String): JsResult[Recommendation] =
     Json.parse(rawJson).validate[Recommendation]
+
 }
 
 /**
@@ -32,7 +33,7 @@ object Recommendation {
   * */
 case class Mood(event_time: Long, ingestion_time: Long, name: String, mood: String)
 
-/**
+/**j
   * result of joining a recommendation with the consultant's mood
   * */
 case class MoodRec(eventTime: Long, consultant: String, mood: Option[String], recommendation: String)
@@ -44,13 +45,11 @@ case class MoodRec(eventTime: Long, consultant: String, mood: Option[String], re
   */
 class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], KeyValue[String, MoodRec]] {
 
-  val logger: Logger = LoggerFactory.getLogger(EventTimeJoiner.getClass)
-
   // how often do we review previously joined data?
   val reviewJoinPeriod = 1000
 
   // at each periodic review, we revisit all joined data before (now() - reviewLagDelta)
-  val reviewLagDelta = 5000
+  val reviewLagDelta = 3000
 
   val BEGINNING_OF_TIMES = 0l
 
@@ -87,7 +86,9 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
         new KeyValue(key, joined)
 
       case Right(mood) =>
+        println(s"new mood: $mood")
         val updatedMoodHistory = (mood :: moodHistory(mood.name)).sortBy( - _.event_time)
+        println(s"new mood history: $key & ${mood.name}-> $updatedMoodHistory")
         moodStore.put(mood.name, updatedMoodHistory)
         recordConsultantName(mood.name, mood.event_time)
         null
@@ -148,7 +149,7 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
     // if updated join is different: emit the new value
     (oldJoinedMoods zip newJoinedMoods)
       .filter{ case( MoodRec(_, _, oldMood, _), MoodRec(_, _, newMood, _)) => oldMood != newMood }
-      .foreach{ case ( _ , updated ) => ctx.forward(consultantName, updated)}
+      .foreach{ case ( _ , updated ) => ctx.forward(s"bis-$consultantName", updated)}
 
     // TODO: if we update the joined value, we should record that in the windowed storage
 
@@ -215,12 +216,10 @@ object EventTimeJoinExampleApp extends App {
     p.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
     p.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass)
     p.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass)
-    //p.put(StreamsConfig.BUFFERED_RECORDS_PER_PARTITION_CONFIG, "10")
+    p.put(StreamsConfig.BUFFERED_RECORDS_PER_PARTITION_CONFIG, "10")
 //    p.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, "svend.example.eventimejoin.TimeStampSniffer ")
     p
   }
-
-  import org.apache.kafka.streams.state.Stores
 
   // store of (consultantName -> chronological-list-of-moods)
   val moodStore = Stores
@@ -254,14 +253,13 @@ object EventTimeJoinExampleApp extends App {
     .addStateStore(bestEffortJoinStore)
     .addStateStore(consultantStore).asInstanceOf[KStreamBuilder]
 
-  // TODO: timestamp extractor is missing here
-  builder
-    .stream(Serdes.String(), Serdes.String(), "etj-events-4", "etj-moods-4")
+  val parsed = builder
+    .stream(Serdes.String(), Serdes.String(), "etj-moods-11", "etj-events-11")
     .mapValues[Option[Either[Recommendation, Mood]]](EventTimeJoinExample.parse)
     .filter{ case (_, v: Option[Either[Recommendation, Mood]]) =>  v.isDefined }
     .mapValues[Either[Recommendation, Mood]](_.get)
     .selectKey[String]{ case (_, v) => EventTimeJoinExample.userId(v)}
-    .transform(EventTimeJoiner.supplier, "moods", "bestEffortJoins", "consultants")
+    .transform(EventTimeJoiner.supplier, "moods", "bestEffortJoins",  "consultants")
     .print()
 
   new KafkaStreams(builder, config).start()

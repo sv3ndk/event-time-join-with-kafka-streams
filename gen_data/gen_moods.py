@@ -13,7 +13,7 @@ import json
 import time
 from kafka import KafkaProducer
 
-target_topic="etj-moods-10"
+target_topic="etj-moods-11"
 num_users = 5
 
 # this seed must be identical to the seed for gen_events for the names to match
