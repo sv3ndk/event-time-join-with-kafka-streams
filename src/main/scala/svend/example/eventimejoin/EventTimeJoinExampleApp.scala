@@ -86,9 +86,9 @@ class EventTimeJoiner extends Transformer[String, Either[Recommendation, Mood], 
         new KeyValue(key, joined)
 
       case Right(mood) =>
-        println(s"new mood: $mood")
+//        println(s"new mood: $mood")
         val updatedMoodHistory = (mood :: moodHistory(mood.name)).sortBy( - _.event_time)
-        println(s"new mood history: $key & ${mood.name}-> $updatedMoodHistory")
+//        println(s"new mood history: $key & ${mood.name}-> $updatedMoodHistory")
         moodStore.put(mood.name, updatedMoodHistory)
         recordConsultantName(mood.name, mood.event_time)
         null
