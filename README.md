@@ -23,6 +23,32 @@ You can the execute then start the python scripts in `gen_data`:
 
 I recommend starting them together so produced timestamps are similar and kafka stream is able to apply flow control (TODO: review this: this might no longer be necessary since I handle timestamps explicitly in the scripts). 
 
+The mood event generator should produce beautiful consultant's recommendations, as follows: 
+
+```
+ {"ingestion_time": 689, "consultant": "Adrian", "event_time": 131, "recommendation": "implement intuitive vortals"}
+ {"ingestion_time": 697, "consultant": "Sheila", "event_time": 520, "recommendation": "seize proactive interfaces"}
+ {"ingestion_time": 782, "consultant": "Tammy", "event_time": 629, "recommendation": "orchestrate efficient platforms"}
+ {"ingestion_time": 949, "consultant": "Rhonda", "event_time": 257, "recommendation": "matrix integrated web services"}
+ {"ingestion_time": 995, "consultant": "Rhonda", "event_time": 59, "recommendation": "enable B2C web-readiness"}
+ {"ingestion_time": 1000, "consultant": "Adrian", "event_time": 603, "recommendation": "morph wireless initiatives"}
+ {"ingestion_time": 1009, "consultant": "Scott", "event_time": 957, "recommendation": "orchestrate compelling platforms"}
+ {"ingestion_time": 1029, "consultant": "Tammy", "event_time": 693, "recommendation": "generate vertical portals"}
+ {"ingestion_time": 1078, "consultant": "Scott", "event_time": 526, "recommendation": "harness virtual schemas"}
+ {"ingestion_time": 1127, "consultant": "Adrian", "event_time": 567, "recommendation": "grow integrated vortals"}
+ {"ingestion_time": 1189, "consultant": "Tammy", "event_time": 1057, "recommendation": "revolutionize visionary content"}
+ {"ingestion_time": 1284, "consultant": "Tammy", "event_time": 1255, "recommendation": "drive wireless e-tailers"}
+ {"ingestion_time": 1297, "consultant": "Scott", "event_time": 973, "recommendation": "embrace mission-critical content"}
+ {"ingestion_time": 1310, "consultant": "Tammy", "event_time": 1306, "recommendation": "embrace back-end networks"}
+ {"ingestion_time": 1323, "consultant": "Tammy", "event_time": 1034, "recommendation": "target transparent systems"}
+ {"ingestion_time": 1349, "consultant": "Tammy", "event_time": 1305, "recommendation": "expedite virtual info-mediaries"}
+ {"ingestion_time": 1386, "consultant": "Scott", "event_time": 738, "recommendation": "engineer strategic e-business"}
+ {"ingestion_time": 1399, "consultant": "Tammy", "event_time": 1106, "recommendation": "morph strategic networks"}
+ {"ingestion_time": 1514, "consultant": "Adrian", "event_time": 1406, "recommendation": "innovate impactful content"}
+ ```
+ 
+ Which are generated with python Faker's [`bs()` method ](https://faker.readthedocs.io/en/latest/providers/faker.providers.company.html) (which stands for "business statement", right?)
+
 
 You can check that have been posted to kafka as follows: 
 
