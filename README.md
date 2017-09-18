@@ -2,7 +2,7 @@
 
 This is a proof of concept scala project to illustrate event-time join in Kafka Stream 0.11.0.0. 
 
-The full description is available in my blog post: [Event-time join with kafka Streams]()
+The full description is available in my blog post: [Event-time join with kafka Streams](https://sv3nd.github.io/event-time-low-latency-joins-with-kafka-streams.html#event-time-low-latency-joins-with-kafka-streams)
 
 ## Generate test data
 
